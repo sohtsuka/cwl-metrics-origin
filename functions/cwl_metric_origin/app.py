@@ -22,7 +22,7 @@ cwlogs = boto3.client('logs')
 
 def lambda_handler(event, context):
     logger.info('Event: %s', event)
-    
+
     message = json.loads(event['Records'][0]['Sns']['Message'])
     if message['NewStateValue'] == 'ALARM':
         try:
@@ -51,7 +51,8 @@ def get_alarm_detail(message):
     )
     logger.info('describe_metric_filters: %s', filters)
     if len(filters['metricFilters']) <= 0:
-        raise UnexpectedMessageException(f'MetricFilter not found for this alarm: alarm={alarm_name}')
+        raise UnexpectedMessageException(
+            f'MetricFilter not found for this alarm: alarm={alarm_name}')
     filters = filters['metricFilters']
 
     datapoints = get_datapoints(message)
@@ -63,21 +64,30 @@ def get_alarm_detail(message):
         name=alarm_name,
         datapoints=datapoints,
         period=message['Trigger']['Period'],
-        filters = [
-            FilterDetail(name=f['filterName'], log_group=f['logGroupName'], pattern=f['filterPattern'])
-            for f in filters
+        filters=[
+            FilterDetail(
+                name=f['filterName'],
+                log_group=f['logGroupName'],
+                pattern=f['filterPattern']
+            ) for f in filters
         ]
     )
 
 
 def get_datapoints(message):
-    times = re.findall(r'\((\d\d/\d\d/\d\d \d\d:\s*\d\d:\s*\d\d)\)', message['NewStateReason'])
+    times = re.findall(
+        r'\((\d\d/\d\d/\d\d \d\d:\s*\d\d:\s*\d\d)\)',
+        message['NewStateReason']
+    )
     logger.debug('Times: %s', times)
 
     fixed_times = [re.sub(r':\s+', ':', t) for t in times]
     logger.debug('Fixed times: %s', fixed_times)
-    
-    datapoints = [datetime.strptime(t, '%d/%m/%y %H:%M:%S').replace(tzinfo=timezone.utc) for t in fixed_times]
+
+    datapoints = [
+        datetime.strptime(t, '%d/%m/%y %H:%M:%S').replace(tzinfo=timezone.utc)
+        for t in fixed_times
+    ]
     return datapoints
 
 
@@ -104,7 +114,7 @@ def notify(alarm_detail, context):
             ]
         }
     ]
-    
+
     for filter in alarm_detail.filters:
         search_url = cw_log_url(
             log_group=filter.log_group,
@@ -124,7 +134,7 @@ def notify(alarm_detail, context):
                 ]
             }
         ])
-    
+
     send_slack({
         'channel': SLACK_CHANNEL,
         'text': 'fallback',
@@ -154,7 +164,7 @@ def cw_log_url(log_group, log_stream=None, pattern=None, start_millis=None, end_
     if queries:
         params += cw_escape(f'?{"&".join(queries)}')
 
-    return f'https://{REGION}.console.aws.amazon.com/cloudwatch/home?region={REGION}#logsV2:{params}'
+    return f'https://{REGION}.console.aws.amazon.com/cloudwatch/home?region={REGION}#logsV2:{params}'  # noqa: E501
 
 
 def cw_quote(s):
@@ -190,8 +200,10 @@ def search_logs(alarm_detail):
             'endTime': alarm_detail.end_millis,
             'filterPattern': filter.pattern
         }
-        logger.info('EVENT: Started searching logs: logGroup=%s, pattern=%s, time=%d-%d',
-            filter.log_group, filter.pattern, alarm_detail.start_millis, alarm_detail.end_millis)
+        logger.info(
+            'EVENT: Started searching logs: logGroup=%s, pattern=%s, time=%d-%d',
+            filter.log_group, filter.pattern, alarm_detail.start_millis, alarm_detail.end_millis
+        )
 
         next_token = None
         while True:
@@ -205,7 +217,7 @@ def search_logs(alarm_detail):
                 filter_args['nextToken'] = next_token
             else:
                 break
-    
+
     logger.info('EVENT: Finished searching logs')
 
 
@@ -226,9 +238,12 @@ class AlarmDetail:
     end_millis: int = None
 
     def __post_init__(self):
-        if self.datapoints:
-            object.__setattr__(self, 'start_millis', int(self.datapoints[0].timestamp()) * 1000)
-            object.__setattr__(self, 'end_millis', int(self.datapoints[-1].timestamp() + self.period) * 1000)
+        if not self.datapoints:
+            return
+        start_sec = int(self.datapoints[0].timestamp())
+        end_sec = int(self.datapoints[-1].timestamp() + self.period)
+        object.__setattr__(self, 'start_millis', start_sec * 1000)
+        object.__setattr__(self, 'end_millis', end_sec * 1000)
 
 
 class UnexpectedMessageException(Exception):
