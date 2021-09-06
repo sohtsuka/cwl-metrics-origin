@@ -122,6 +122,15 @@ def notify(alarm_detail, context):
             end_millis=alarm_detail.end_millis,
             pattern=filter.pattern
         )
+        # Slack section fields text: maximum length is 2000 characters
+        search_url_alert = ''
+        if len(search_url) > 1900:
+            search_url = cw_log_url(
+                log_group=filter.log_group,
+                start_millis=alarm_detail.start_millis,
+                end_millis=alarm_detail.end_millis
+            )
+            search_url_alert = '\n(Filter Pattern is truncated due to the size limit)'
         blocks.extend([
             {'type': 'divider'},
             {
@@ -130,7 +139,7 @@ def notify(alarm_detail, context):
                     slack_field('Filter Name', filter.name),
                     slack_field('Log Group', filter.log_group),
                     slack_field('Filter Pattern', f'`{filter.pattern}`'),
-                    slack_field('Search Logs', f'<{search_url}|Link>')
+                    slack_field('Search Logs', f'<{search_url}|Link>{search_url_alert}')
                 ]
             }
         ])
